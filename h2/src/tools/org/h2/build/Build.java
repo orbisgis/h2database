@@ -671,7 +671,7 @@ public class Build extends BuildBase {
      * a new H2 version is made.
      */
     @Description(summary = "Build H2 release jars and upload to file:///data/h2database/m2-repo.")
-    public void mavenDeployCentral() {
+    public void mavenDeployCentral(String pass) {
         // generate and deploy h2*-sources.jar file
         FileList files = files("src/main");
         copy("docs", files, "src/main");
@@ -688,14 +688,19 @@ public class Build extends BuildBase {
         // as a workaround we generate the pom, but overwrite it later on
         // (that's why the regular jar is created at the very end)
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=docs/h2-" + getVersion() + "-sources.jar",
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
                 "-Dclassifier=sources",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DartifactId=h2",
-                "-DgroupId=com.h2database"
+                "-DgroupId=org.orbisgis"
                 // ,"-DgeneratePom=false"
                 ));
 
@@ -704,14 +709,19 @@ public class Build extends BuildBase {
         files = files("docs/javadocImpl2");
         jar("docs/h2-" + getVersion() + "-javadoc.jar", files, "docs/javadocImpl2");
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=docs/h2-" + getVersion() + "-javadoc.jar",
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
                 "-Dclassifier=javadoc",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DartifactId=h2",
-                "-DgroupId=com.h2database"
+                "-DgroupId=org.orbisgis"
                 // ,"-DgeneratePom=false"
                 ));
 
@@ -721,14 +731,19 @@ public class Build extends BuildBase {
         pom = replaceAll(pom, "@version@", getVersion());
         writeFile(Paths.get("bin/pom.xml"), pom.getBytes());
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=bin/h2" + getJarSuffix(),
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DpomFile=bin/pom.xml",
                 "-DartifactId=h2",
-                "-DgroupId=com.h2database"));
+                "-DgroupId=org.orbisgis"));
 
         // generate the h2-mvstore-*-sources.jar file
         files = files("src/main");
@@ -746,14 +761,19 @@ public class Build extends BuildBase {
 
         // deploy the h2-mvstore-*-source.jar file
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=docs/h2-mvstore-" + getVersion() + "-sources.jar",
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
                 "-Dclassifier=sources",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DartifactId=h2-mvstore",
-                "-DgroupId=com.h2database"
+                "-DgroupId=org.orbisgis"
                 // ,"-DgeneratePom=false"
                 ));
 
@@ -762,14 +782,19 @@ public class Build extends BuildBase {
         files = files("docs/javadocImpl3");
         jar("docs/h2-mvstore-" + getVersion() + "-javadoc.jar", files, "docs/javadocImpl3");
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=docs/h2-mvstore-" + getVersion() + "-javadoc.jar",
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
                 "-Dclassifier=javadoc",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DartifactId=h2-mvstore",
-                "-DgroupId=com.h2database"
+                "-DgroupId=org.orbisgis"
                 // ,"-DgeneratePom=false"
                 ));
 
@@ -779,14 +804,19 @@ public class Build extends BuildBase {
         pom = replaceAll(pom, "@version@", getVersion());
         writeFile(Paths.get("bin/pom.xml"), pom.getBytes());
         execScript("mvn", args(
+                "clean",
+                "package",
+                "gpg:sign",
                 "deploy:deploy-file",
+                "-Dmaven.test.skip=true",
+                "-Dgpg.passphrase="+pass,
                 "-Dfile=bin/h2-mvstore" + getJarSuffix(),
-                "-Durl=file:///data/h2database/m2-repo",
+                "-Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/",
                 "-Dpackaging=jar",
-                "-Dversion=" + getVersion(),
+                "-Dversion=2.0.0-RC1",
                 "-DpomFile=bin/pom.xml",
                 "-DartifactId=h2-mvstore",
-                "-DgroupId=com.h2database"));
+                "-DgroupId=org.orbisgis"));
     }
 
     /**
