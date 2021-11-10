@@ -33,5 +33,4 @@ jobs:
       # Deploy
       - name: Run a multi-line script
         run: |
-          cd h2
-          ./build.sh mavenDeployCentral ${{ secrets.OSSRH_GPG_PASSWORD }}
+          cd h2 && ./build.sh compile && ./build.sh mavenDeployCentral ${{ secrets.OSSRH_GPG_PASSWORD }}
