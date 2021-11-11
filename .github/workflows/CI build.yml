@@ -34,7 +34,7 @@ jobs:
       - name: Deploy
         run: |
           cd h2
-          mvn package javadoc:javadoc gpg:sign deploy:deploy -Dmaven.test.skip=true --no-transfer-progress --batch-mode
+          mvn package gpg:sign deploy:deploy -Dmaven.test.skip=true --no-transfer-progress --batch-mode
         env:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
