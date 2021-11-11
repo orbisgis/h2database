@@ -220,7 +220,7 @@ public class BuildBase {
                     }
                     System.setProperty(key, value);
                 } else {
-                    if (!runTarget(a)) {
+                    if (!runTarget(a, (args.length>1 ? Arrays.copyOfRange(args, 1, args.length) : new String[0]))) {
                         break;
                     }
                 }
@@ -229,17 +229,22 @@ public class BuildBase {
         println("Done in " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - time) + " ms");
     }
 
-    private boolean runTarget(String target) {
+    private boolean runTarget(String target, String[] args) {
         Method m = null;
         try {
-            m = getClass().getMethod(target);
+            if(target.equals("mavenDeployCentral")) {
+                m = getClass().getMethod(target, String.class);
+            }
+            else {
+                m = getClass().getMethod(target);
+            }
         } catch (Exception e) {
             sysOut.println("Unknown target: " + target);
             projectHelp();
             return false;
         }
         println("Target: " + target);
-        invoke(m, this, new Object[0]);
+        invoke(m, this, args);
         return true;
     }
 
@@ -262,7 +267,7 @@ public class BuildBase {
             }
             long time = System.nanoTime();
             try {
-                runTarget(line);
+                runTarget(line, new String[0]);
             } catch (Exception e) {
                 System.out.println(e);
             }
