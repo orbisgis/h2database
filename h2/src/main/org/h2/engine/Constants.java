@@ -15,28 +15,28 @@ public class Constants {
     /**
      * The build date is updated for each public release.
      */
-    public static final String BUILD_DATE = "2019-10-14";
+    public static final String BUILD_DATE = "2021-11-26";
 
     /**
      * The build date of the last stable release.
      */
-    public static final String BUILD_DATE_STABLE = "2019-03-13";
+    public static final String BUILD_DATE_STABLE = "2021-11-25";
 
     /**
      * Sequential version number. Even numbers are used for official releases,
      * odd numbers are used for development builds.
      */
-    public static final int BUILD_ID = 201;
+    public static final int BUILD_ID = 203;
 
     /**
      * The build id of the last stable release.
      */
-    public static final int BUILD_ID_STABLE = 199;
+    public static final int BUILD_ID_STABLE = 202;
 
     /**
      * Whether this is a snapshot version.
      */
-    public static final boolean BUILD_SNAPSHOT = false;
+    public static final boolean BUILD_SNAPSHOT = true;
 
     /**
      * If H2 is compiled to be included in a product, this should be set to
@@ -84,7 +84,7 @@ public class Constants {
 
     /**
      * The TCP protocol version number 20.
-     * @since 2.0.202 (TODO)
+     * @since 2.0.202 (2021-11-25)
      */
     public static final int TCP_PROTOCOL_VERSION_20 = 20;
 

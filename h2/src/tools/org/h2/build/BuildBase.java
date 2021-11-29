@@ -332,7 +332,7 @@ public class BuildBase {
         sysOut.println();
     }
 
-    private static boolean isWindows() {
+    protected static boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("windows");
     }
 
