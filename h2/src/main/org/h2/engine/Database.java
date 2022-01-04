@@ -1,11 +1,10 @@
 /*
- * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
 
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -466,9 +465,12 @@ public final class Database implements DataHandler, CastDataProvider {
 
     @Override
     public void checkPowerOff() {
-        if (powerOffCount == 0) {
-            return;
+        if (powerOffCount != 0) {
+            checkPowerOff2();
         }
+    }
+
+    private void checkPowerOff2() {
         if (powerOffCount > 1) {
             powerOffCount--;
             return;
@@ -767,7 +769,7 @@ public final class Database implements DataHandler, CastDataProvider {
         if (ASSERT) {
             lockMetaAssertion(session);
         }
-        return meta.lock(session, true, true);
+        return meta.lock(session, Table.EXCLUSIVE_LOCK);
     }
 
     private void lockMetaAssertion(SessionLocal session) {
@@ -1538,24 +1540,6 @@ public final class Database implements DataHandler, CastDataProvider {
         obj.rename(newName);
         map.put(newName, obj);
         updateMetaAndFirstLevelChildren(session, obj);
-    }
-
-    /**
-     * Create a temporary file in the database folder.
-     *
-     * @return the file name
-     */
-    public String createTempFile() {
-        try {
-            boolean inTempDir = readOnly;
-            String name = databaseName;
-            if (!persistent) {
-                name = "memFS:" + name;
-            }
-            return FileUtils.createTempFile(name, Constants.SUFFIX_TEMP_FILE, inTempDir);
-        } catch (IOException e) {
-            throw DbException.convertIOException(e, databaseName);
-        }
     }
 
     private void deleteOldTempFiles() {
@@ -2460,13 +2444,19 @@ public final class Database implements DataHandler, CastDataProvider {
 
     @Override
     public ValueTimestampTimeZone currentTimestamp() {
-        // This method should not be reachable
+        Session session = SessionLocal.getThreadLocalSession();
+        if (session != null) {
+            return session.currentTimestamp();
+        }
         throw DbException.getUnsupportedException("Unsafe comparison or cast");
     }
 
     @Override
     public TimeZoneProvider currentTimeZone() {
-        // This method should not be reachable
+        Session session = SessionLocal.getThreadLocalSession();
+        if (session != null) {
+            return session.currentTimeZone();
+        }
         throw DbException.getUnsupportedException("Unsafe comparison or cast");
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -216,6 +216,12 @@ public class DbSettings extends SettingsBase {
      * added so an index on A can be used.
      */
     public final boolean optimizeTwoEquals = get("OPTIMIZE_TWO_EQUALS", true);
+
+    /**
+     * Database setting <code>OPTIMIZE_SIMPLE_SINGLE_ROW_SUBQUERIES</code> (default: true).
+     * Optimize expressions of the form (SELECT A) to A.
+     */
+    public final boolean optimizeSimpleSingleRowSubqueries = get("OPTIMIZE_SIMPLE_SINGLE_ROW_SUBQUERIES", true);
 
     /**
      * Database setting <code>QUERY_CACHE_SIZE</code> (default: 8).

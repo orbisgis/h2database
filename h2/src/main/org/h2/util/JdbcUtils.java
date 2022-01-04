@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -315,6 +315,9 @@ public class JdbcUtils {
                     }
                     throw new SQLException("Driver " + driver + " is not suitable for " + url, "08001");
                 } else if (javax.naming.Context.class.isAssignableFrom(d)) {
+                    if (!url.startsWith("java:")) {
+                        throw new SQLException("Only java scheme is supported for JNDI lookups", "08001");
+                    }
                     // JNDI context
                     Context context = (Context) d.getDeclaredConstructor().newInstance();
                     DataSource ds = (DataSource) context.lookup(url);

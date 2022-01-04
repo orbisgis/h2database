@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -57,7 +57,9 @@ public class Build extends BuildBase {
 
     private static final String PGJDBC_HASH = "45fa6eef266aa80024ef2ab3688d9faa38c642e5";
 
-    private static final String SERVLET_VERSION = "4.0.1";
+    private static final String JAVAX_SERVLET_VERSION = "4.0.1";
+
+    private static final String JAKARTA_SERVLET_VERSION = "5.0.0";
 
     private static final String SLF4J_VERSION = "1.7.30";
 
@@ -143,7 +145,8 @@ public class Build extends BuildBase {
         mkdir("temp");
         download();
         String classpath = "temp" +
-                File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
@@ -181,14 +184,16 @@ public class Build extends BuildBase {
             exclude("*/package.html");
         copy("temp", files, "src/test");
 
-        javadoc("-sourcepath", "src/main", "org.h2.tools", "org.h2.jmx",
+        javadoc("-sourcepath", "src/main",
+                "-d", "docs/javadoc",
+                "org.h2.tools", "org.h2.jmx",
                 "-classpath",
                 "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
-                File.pathSeparator + "ext/jts-core-" + JTS_VERSION + ".jar",
-                "-docletpath", "bin" + File.pathSeparator + "temp",
-                "-doclet", "org.h2.build.doclet.ResourceDoclet");
+                File.pathSeparator + "ext/org.osgi.core-" + OSGI_VERSION + ".jar" +
+                File.pathSeparator + "ext/org.osgi.enterprise-" + OSGI_VERSION + ".jar" +
+                File.pathSeparator + "ext/jts-core-" + JTS_VERSION + ".jar");
 
         files = files("src/main").
             exclude("*.MF").
@@ -256,7 +261,8 @@ public class Build extends BuildBase {
         delete(files("coverage/bin/META-INF/versions"));
         String cp = "coverage/bin" +
             File.pathSeparator + "ext/postgresql-" + PGJDBC_VERSION + ".jar" +
-            File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+            File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+            File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
             File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
             File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
             File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
@@ -369,9 +375,12 @@ public class Build extends BuildBase {
     }
 
     private void downloadOrVerify(boolean offline) {
-        downloadOrVerify("ext/javax.servlet-api-" + SERVLET_VERSION + ".jar",
-                "javax/servlet", "javax.servlet-api", SERVLET_VERSION,
+        downloadOrVerify("ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar",
+                "javax/servlet", "javax.servlet-api", JAVAX_SERVLET_VERSION,
                 "a27082684a2ff0bf397666c3943496c44541d1ca", offline);
+        downloadOrVerify("ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar",
+                "jakarta/servlet", "jakarta.servlet-api", JAKARTA_SERVLET_VERSION,
+                "2e6b8ccde55522c879434ddec3714683ccae6867", offline);
         downloadOrVerify("ext/lucene-core-" + LUCENE_VERSION + ".jar",
                 "org/apache/lucene", "lucene-core", LUCENE_VERSION,
                 "b275ca5f39b6dd45d5a7ecb49da65205ad2732ca", offline);
@@ -578,16 +587,17 @@ public class Build extends BuildBase {
         compileTools();
         delete("docs");
         mkdir("docs/javadoc");
-        javadoc("-sourcepath", "src/main", "org.h2.jdbc", "org.h2.jdbcx",
+        javadoc("-sourcepath", "src/main",
+                "-d", "docs/javadoc",
+                "org.h2.jdbc", "org.h2.jdbcx",
                 "org.h2.tools", "org.h2.api", "org.h2.engine", "org.h2.fulltext",
                 "-classpath",
                 "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
-                File.pathSeparator + "ext/jts-core-" + JTS_VERSION + ".jar",
-                "-docletpath", "bin" + File.pathSeparator + "temp",
-                "-doclet", "org.h2.build.doclet.Doclet");
-        copy("docs/javadoc", files("src/docsrc/javadoc"), "src/docsrc/javadoc");
+                File.pathSeparator + "ext/org.osgi.core-" + OSGI_VERSION + ".jar" +
+                File.pathSeparator + "ext/org.osgi.enterprise-" + OSGI_VERSION + ".jar" +
+                File.pathSeparator + "ext/jts-core-" + JTS_VERSION + ".jar");
     }
 
     /**
@@ -601,14 +611,13 @@ public class Build extends BuildBase {
                 // need to be disabled if not enough memory
                 File.pathSeparator + "src/test" +
                 File.pathSeparator + "src/tools",
-                // need to be disabled for java 7
                 "-Xdoclint:all,-missing",
                 "-noindex",
-                "-tag", "h2.resource",
                 "-d", "docs/javadocImpl2",
                 "-classpath", javaToolsJar +
                 File.pathSeparator + "ext/slf4j-api-" + SLF4J_VERSION + ".jar" +
-                File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
@@ -624,11 +633,11 @@ public class Build extends BuildBase {
         mkdir("docs/javadocImpl3");
         javadoc("-sourcepath", "src/main",
                 "-noindex",
-                "-tag", "h2.resource",
                 "-d", "docs/javadocImpl3",
                 "-classpath", javaToolsJar +
                 File.pathSeparator + "ext/slf4j-api-" + SLF4J_VERSION + ".jar" +
-                File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
@@ -643,9 +652,11 @@ public class Build extends BuildBase {
         javadoc("-sourcepath", "src/main" +
                 File.pathSeparator + "src/test" +
                 File.pathSeparator + "src/tools",
+                "-d", "docs/javadoc",
                 "-classpath", javaToolsJar +
                 File.pathSeparator + "ext/slf4j-api-" + SLF4J_VERSION + ".jar" +
-                File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +
@@ -656,10 +667,7 @@ public class Build extends BuildBase {
                 File.pathSeparator + "ext/junit-jupiter-api-" + JUNIT_VERSION + ".jar" +
                 File.pathSeparator + "ext/apiguardian-api-" + APIGUARDIAN_VERSION + ".jar",
                 "-subpackages", "org.h2",
-                "-package",
-                "-docletpath", "bin" + File.pathSeparator + "temp",
-                "-doclet", "org.h2.build.doclet.Doclet");
-        copy("docs/javadocImpl", files("src/docsrc/javadoc"), "src/docsrc/javadoc");
+                "-package");
     }
 
     private static void manifest(String path) {
@@ -904,7 +912,8 @@ public class Build extends BuildBase {
         downloadTest();
         String cp = "temp" + File.pathSeparator + "bin" +
                 File.pathSeparator + "ext/postgresql-" + PGJDBC_VERSION + ".jar" +
-                File.pathSeparator + "ext/javax.servlet-api-" + SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/javax.servlet-api-" + JAVAX_SERVLET_VERSION + ".jar" +
+                File.pathSeparator + "ext/jakarta.servlet-api-" + JAKARTA_SERVLET_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-core-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-analyzers-common-" + LUCENE_VERSION + ".jar" +
                 File.pathSeparator + "ext/lucene-queryparser-" + LUCENE_VERSION + ".jar" +

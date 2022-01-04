@@ -1,4 +1,4 @@
-# Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+# Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
 # and the EPL 1.0 (https://h2database.com/html/license.html).
 # Initial Developer: H2 Group
 
@@ -12,7 +12,7 @@ selectExpression [,...]
 [ GROUP BY groupingElement [,...] ] [ HAVING expression ]
 [ WINDOW { { windowName AS windowSpecification } [,...] } ]
 @h2@ [ QUALIFY expression ]
-[ { UNION [ ALL ] | EXCEPT | @c@ { MINUS } | INTERSECT } query ]
+[ { UNION [ ALL ] | EXCEPT | INTERSECT } query ]
 [ ORDER BY selectOrder [,...] ]
 [ OFFSET expression { ROW | ROWS } ]
 [ FETCH { FIRST | NEXT } [ expression [ PERCENT ] ] { ROW | ROWS }
@@ -48,16 +48,16 @@ ORDER BY clause, if any, is used to determine preserved rows.
 First row is each DISTINCT ON group is preserved.
 In absence of ORDER BY preserved rows are not determined, database may choose any row from each DISTINCT ON group.
 
-9. UNION, EXCEPT (MINUS), and INTERSECT combine the result of this query with the results of another query.
-Multiple set operators (UNION, INTERSECT, MINUS, EXCEPT) are evaluated from left to right.
-For compatibility with other databases and future versions of H2 please use parentheses.
+9. UNION, EXCEPT, and INTERSECT combine the result of this query with the results of another query.
+INTERSECT has higher precedence than UNION and EXCEPT.
+Operators with equal precedence are evaluated from left to right.
 
 10. ORDER BY sorts the result by the given column(s) or expression(s).
 
 11. Number of rows in output can be limited with OFFSET and FETCH clauses.
 OFFSET specifies how many rows to skip.
 Please note that queries with high offset values can be slow.
-FETCH FIRST/NEXT limits the number of rows returned by the query (no limit if null or smaller than zero).
+FETCH FIRST/NEXT limits the number of rows returned by the query.
 If PERCENT is specified number of rows is specified as a percent of the total number of rows
 and should be an integer value between 0 and 100 inclusive.
 WITH TIES can be used only together with ORDER BY and means that all additional rows that have the same sorting position
@@ -1834,10 +1834,10 @@ SET MAX_OPERATION_MEMORY 0
 "
 
 "Commands (Other)","SET MODE","
-@h2@ SET MODE { REGULAR | DB2 | DERBY | HSQLDB | MSSQLSERVER | MYSQL | ORACLE | POSTGRESQL }
+@h2@ SET MODE { REGULAR | STRICT | LEGACY | DB2 | DERBY | HSQLDB | MSSQLSERVER | MYSQL | ORACLE | POSTGRESQL }
 ","
-Changes to another database compatibility mode. For details, see Compatibility
-Modes in the feature section.
+Changes to another database compatibility mode. For details, see
+[Compatibility Modes](https://h2database.com/html/features.html#compatibility_modes).
 
 This setting is not persistent.
 Admin rights are required to execute this command, as it affects all connections.
@@ -2082,18 +2082,6 @@ This setting can be used for compatibility with definitions from older versions 
 This setting can be appended to the database URL: ""jdbc:h2:./test;TRUNCATE_LARGE_LENGTH=TRUE""
 ","
 SET TRUNCATE_LARGE_LENGTH TRUE
-"
-
-"Commands (Other)","SET UNDO_LOG","
-@h2@ SET UNDO_LOG int
-","
-Enables (1) or disables (0) the per session undo log. The undo log is enabled by
-default. When disabled, transactions can not be rolled back. This setting should
-only be used for bulk operations that don't need to be atomic.
-
-This command commits an open transaction in this connection.
-","
-SET UNDO_LOG 0
 "
 
 "Commands (Other)","SET VARIABLE_BINARY","
@@ -3162,18 +3150,21 @@ REGEXP '[a-z]'
 "Other Grammar","Table Constraint Definition","
 [ constraintNameDefinition ]
 { PRIMARY KEY @h2@ [ HASH ] ( columnName [,...] ) }
-    | UNIQUE ( columnName [,...] )
+    | UNIQUE ( { columnName [,...] | VALUE } )
     | referentialConstraint
     | CHECK (condition)
 ","
 Defines a constraint.
 
 PRIMARY KEY and UNIQUE require unique values.
-PRIMARY KEY also disallows NULL values and marks the column as a primary key.
+PRIMARY KEY also disallows NULL values and marks the column as a primary key, a table can have only one primary key.
+UNIQUE constraint supports NULL values and rows with NULL value in any column are considered as unique.
+UNIQUE (VALUE) creates a unique constraint on entire row, excluding invisible columns;
+but if new columns will be added to the table, they will not be included into this constraint.
 
 Referential constraint requires values that exist in other column(s) (usually in another table).
 
-Check constraint require a specified condition to return TRUE or UNKNOWN (NULL).
+Check constraint requires a specified condition to return TRUE or UNKNOWN (NULL).
 It can reference columns of the table, and can reference objects that exist while the statement is executed.
 Conditions are only checked when a row is added or modified in the table where the constraint exists.
 ","
@@ -3647,6 +3638,8 @@ The CACHE option sets the number of pre-allocated numbers.
 If the system crashes without closing the database, at most this many numbers are lost.
 The default cache size is 32 if sequence has enough range of values.
 NO CACHE option or the cache size 1 or lower disable the cache.
+If CACHE option is specified, it cannot be larger than the total number of values
+that sequence can produce within a cycle.
 ","
 MAXVALUE 100000
 CYCLE
@@ -4111,7 +4104,7 @@ BIGINT
 "
 
 "Data Types","NUMERIC Type","
-{ NUMERIC | DECIMAL | DEC | @c@ { NUMBER } } [ ( precisionInt [ , scaleInt ] ) ]
+{ NUMERIC | DECIMAL | DEC } [ ( precisionInt [ , scaleInt ] ) ]
 ","
 Data type with fixed decimal precision and scale.
 This data type is recommended for storing currency values.
@@ -5882,9 +5875,12 @@ EXTRACT(SECOND FROM CURRENT_TIMESTAMP)
 Formats a date, time or timestamp as a string.
 The most important format characters are:
 y year, M month, d day, H hour, m minute, s second.
-For details of the format, see ""java.text.SimpleDateFormat"".
-timeZoneString may be specified if dateAndTime is a DATE, TIME or TIMESTAMP.
-timeZoneString is ignored if dateAndTime is TIMESTAMP WITH TIME ZONE.
+For details of the format, see ""java.time.format.DateTimeFormatter"".
+
+If timeZoneString is specified, it is used in formatted string if formatString has time zone.
+If TIMESTAMP WITH TIME ZONE is passed and timeZoneString is specified,
+the timestamp is converted to the specified time zone and its UTC value is preserved.
+
 This method returns a string.
 ","
 CALL FORMATDATETIME(TIMESTAMP '2001-02-03 04:05:06',
@@ -5933,10 +5929,12 @@ MONTHNAME(CREATED)
 @h2@ PARSEDATETIME(string, formatString
 [, localeString [, timeZoneString]])
 ","
-Parses a string and returns a timestamp.
+Parses a string and returns a TIMESTAMP WITH TIME ZONE value.
 The most important format characters are:
 y year, M month, d day, H hour, m minute, s second.
-For details of the format, see ""java.text.SimpleDateFormat"".
+For details of the format, see ""java.time.format.DateTimeFormatter"".
+
+If timeZoneString is specified, it is used as default.
 ","
 CALL PARSEDATETIME('Sat, 3 Feb 2001 03:05:06 GMT',
     'EEE, d MMM yyyy HH:mm:ss z', 'en', 'GMT')
@@ -6026,9 +6024,10 @@ CALL ABORT_SESSION(3)
 ","
 Returns element at the specified 1-based index from an array.
 
-This function is deprecated, use ""arrayExpression[indexExpression]"" instead of it.
+This function is deprecated, use
+[array element reference](https://www.h2database.com/html/grammar.html#array_element_reference) instead of it.
 
-Returns NULL if there is no such element or array is NULL.
+Returns NULL if array or index is NULL.
 ","
 CALL ARRAY_GET(ARRAY['Hello', 'World'], 2)
 "

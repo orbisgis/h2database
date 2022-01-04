@@ -1,4 +1,4 @@
--- Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
 -- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
@@ -1814,10 +1814,9 @@ script nopasswords nosettings noversion blocksize 10;
 > INSERT INTO SYSTEM_LOB_STREAM VALUES(0, 2, ' ', NULL);
 > INSERT INTO "PUBLIC"."TEST" VALUES (1, SYSTEM_COMBINE_CLOB(0));
 > DROP TABLE IF EXISTS SYSTEM_LOB_STREAM;
-> CALL SYSTEM_COMBINE_BLOB(-1);
 > DROP ALIAS IF EXISTS SYSTEM_COMBINE_CLOB;
 > DROP ALIAS IF EXISTS SYSTEM_COMBINE_BLOB;
-> rows (ordered): 16
+> rows (ordered): 15
 
 drop table test;
 > ok
@@ -2972,8 +2971,9 @@ drop table test;
 create table test(id int primary key);
 > ok
 
+-- Column A.ID cannot be referenced here
 explain select * from test a inner join test b left outer join test c on c.id = a.id;
->> SELECT "A"."ID", "B"."ID", "C"."ID" FROM "PUBLIC"."TEST" "A" /* PUBLIC.TEST.tableScan */ LEFT OUTER JOIN "PUBLIC"."TEST" "C" /* PUBLIC.PRIMARY_KEY_2: ID = A.ID */ ON "C"."ID" = "A"."ID" INNER JOIN "PUBLIC"."TEST" "B" /* PUBLIC.TEST.tableScan */ ON 1=1
+> exception COLUMN_NOT_FOUND_1
 
 SELECT T.ID FROM TEST "T";
 > ID
