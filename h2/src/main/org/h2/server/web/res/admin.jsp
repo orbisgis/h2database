@@ -39,6 +39,10 @@ Initial Developer: H2 Group
         </c:if>
         ${text.adminOthers}<br />
     </p>
+    <p>
+        ${text.adminWebExternalNames}:<br/>
+        <input type="text" name="webExternalNames" value="${webExternalNames}" style="width: 320px"/>
+    </p>
     <h3>
         ${text.adminConnection}
     </h3>
