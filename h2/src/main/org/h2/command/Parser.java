@@ -366,6 +366,7 @@ import org.h2.table.DualTable;
 import org.h2.table.FunctionTable;
 import org.h2.table.IndexColumn;
 import org.h2.table.IndexHints;
+import org.h2.table.QueryExpressionTable;
 import org.h2.table.RangeTable;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
@@ -541,6 +542,22 @@ public class Parser {
     }
 
     /**
+     * Parse a query and prepare its expressions. Rights and literals must be
+     * already checked.
+     *
+     * @param sql the SQL statement to parse
+     * @return the prepared object
+     */
+    public Query prepareQueryExpression(String sql) {
+        Query q = (Query) parse(sql, null);
+        q.prepareExpressions();
+        if (currentTokenType != END_OF_INPUT) {
+            throw getSyntaxError();
+        }
+        return q;
+    }
+
+    /**
      * Parse a statement or a list of statements, and prepare it for execution.
      *
      * @param sql the SQL statement to parse
@@ -641,12 +658,12 @@ public class Parser {
         Prepared p;
         try {
             // first, try the fast variant
-            p = parse(sql, false);
+            p = parse(false);
         } catch (DbException e) {
             if (e.getErrorCode() == ErrorCode.SYNTAX_ERROR_1) {
                 // now, get the detailed exception
                 resetTokenIndex();
-                p = parse(sql, true);
+                p = parse(true);
             } else {
                 throw e.addSQL(sql);
             }
@@ -656,7 +673,7 @@ public class Parser {
         return p;
     }
 
-    private Prepared parse(String sql, boolean withExpectedList) {
+    private Prepared parse(boolean withExpectedList) {
         if (withExpectedList) {
             expectedList = new ArrayList<>();
         } else {
@@ -1912,7 +1929,7 @@ public class Parser {
                 Column[] columnTemplates = null;
                 if (derivedColumnNames != null) {
                     query.init();
-                    columnTemplates = TableView.createQueryColumnTemplateList(
+                    columnTemplates = QueryExpressionTable.createQueryColumnTemplateList(
                             derivedColumnNames.toArray(new String[0]), query, new String[1])
                             .toArray(new Column[0]);
                 }
@@ -3957,16 +3974,27 @@ public class Parser {
             return new CurrentGeneralValueSpecification(CurrentGeneralValueSpecification.CURRENT_CATALOG);
         // CURRENT_DATE
         case "CURDATE":
-        case "SYSDATE":
-        case "TODAY":
             return readCurrentDateTimeValueFunction(CurrentDateTimeValueFunction.CURRENT_DATE, true, name);
+        case "TODAY":
+            read(CLOSE_PAREN);
+            return ModeFunction.getCompatibilityDateTimeValueFunction(database, "TODAY", -1);
         // CURRENT_SCHEMA
         case "SCHEMA":
             read(CLOSE_PAREN);
             return new CurrentGeneralValueSpecification(CurrentGeneralValueSpecification.CURRENT_SCHEMA);
         // CURRENT_TIMESTAMP
-        case "SYSTIMESTAMP":
-            return readCurrentDateTimeValueFunction(CurrentDateTimeValueFunction.CURRENT_TIMESTAMP, true, name);
+        case "SYSTIMESTAMP": {
+            int scale = -1;
+            if (!readIf(CLOSE_PAREN)) {
+                scale = readInt();
+                if (scale < 0 || scale > ValueTime.MAXIMUM_SCALE) {
+                    throw DbException.get(ErrorCode.INVALID_VALUE_SCALE, Integer.toString(scale), "0",
+                            /* compile-time constant */ "" + ValueTime.MAXIMUM_SCALE);
+                }
+                read(CLOSE_PAREN);
+            }
+            return ModeFunction.getCompatibilityDateTimeValueFunction(database, "SYSTIMESTAMP", scale);
+        }
         // EXTRACT
         case "DAY":
         case "DAY_OF_MONTH":
@@ -4007,12 +4035,12 @@ public class Parser {
         // LOCALTIME
         case "CURTIME":
             return readCurrentDateTimeValueFunction(CurrentDateTimeValueFunction.LOCALTIME, true, "CURTIME");
-        case "SYSTIME":
-            read(CLOSE_PAREN);
-            return readCurrentDateTimeValueFunction(CurrentDateTimeValueFunction.LOCALTIME, false, "SYSTIME");
         // LOCALTIMESTAMP
         case "NOW":
             return readCurrentDateTimeValueFunction(CurrentDateTimeValueFunction.LOCALTIMESTAMP, true, "NOW");
+        case "SYSDATE":
+            read(CLOSE_PAREN);
+            return ModeFunction.getCompatibilityDateTimeValueFunction(database, "SYSDATE", -1);
         // LOCATE
         case "INSTR": {
             Expression arg1 = readExpression();
@@ -4862,7 +4890,7 @@ public class Parser {
             Sequence sequence = findSequence(schema, objectName);
             if (sequence != null) {
                 read();
-                return new SequenceValue(sequence, getCurrentPrepared());
+                return new SequenceValue(sequence, getCurrentPreparedOrSelect());
             }
         } else if (isToken("CURRVAL")) {
             Sequence sequence = findSequence(schema, objectName);
@@ -5070,7 +5098,7 @@ public class Parser {
             if (currentSelect == null && currentPrepared == null) {
                 throw getSyntaxError();
             }
-            r = new Rownum(getCurrentPrepared());
+            r = new Rownum(getCurrentPreparedOrSelect());
             break;
         case NULL:
             read();
@@ -5369,7 +5397,7 @@ public class Parser {
             if (equalsToken("NEXT", name)) {
                 int index = tokenIndex;
                 if (readIf(VALUE) && readIf(FOR)) {
-                    return new SequenceValue(readSequence(), getCurrentPrepared());
+                    return new SequenceValue(readSequence(), getCurrentPreparedOrSelect());
                 }
                 setTokenIndex(index);
             }
@@ -5437,7 +5465,7 @@ public class Parser {
             break;
         case 'U':
             if (currentTokenType == LITERAL && token.value(session).getValueType() == Value.VARCHAR
-                    && (equalsToken("UUID", name))) {
+                    && equalsToken("UUID", name)) {
                 String uuid = token.value(session).getString();
                 read();
                 return ValueExpression.get(ValueUuid.get(uuid));
@@ -5447,8 +5475,9 @@ public class Parser {
         return new ExpressionColumn(database, null, null, name, quoted);
     }
 
-    private Prepared getCurrentPrepared() {
-        return currentPrepared;
+    private Prepared getCurrentPreparedOrSelect() {
+        Prepared p = currentPrepared;
+        return p != null ? p : currentSelect;
     }
 
     private Expression readInterval() {
@@ -7437,7 +7466,7 @@ public class Parser {
                 withQuery.session = session;
             }
             read(CLOSE_PAREN);
-            columnTemplateList = TableView.createQueryColumnTemplateList(cols, withQuery, querySQLOutput);
+            columnTemplateList = QueryExpressionTable.createQueryColumnTemplateList(cols, withQuery, querySQLOutput);
 
         } finally {
             TableView.destroyShadowTableForRecursiveExpression(isTemporary, session, recursiveTable);
@@ -7464,7 +7493,7 @@ public class Parser {
         synchronized (session) {
             view = new TableView(schema, id, cteViewName, querySQL,
                     parameters, columnTemplateArray, session,
-                    allowRecursiveQueryDetection, false /* literalsChecked */, true /* isTableExpression */,
+                    allowRecursiveQueryDetection, false, true,
                     isTemporary);
             if (!view.isRecursiveQueryDetected() && allowRecursiveQueryDetection) {
                 if (!isTemporary) {
@@ -7476,7 +7505,7 @@ public class Parser {
                 }
                 view = new TableView(schema, id, cteViewName, querySQL, parameters,
                         columnTemplateArray, session,
-                        false/* assume recursive */, false /* literalsChecked */, true /* isTableExpression */,
+                        false/* assume recursive */, false, true,
                         isTemporary);
             }
             // both removeSchemaObject and removeLocalTempTable hold meta locks
@@ -9220,7 +9249,9 @@ public class Parser {
             }
         }
         if (readIf(NOT)) {
-            read("DEFERRABLE");
+            if (!readIf("DEFERRABLE")) {
+                setTokenIndex(tokenIndex - 1);
+            }
         } else {
             readIf("DEFERRABLE");
         }
