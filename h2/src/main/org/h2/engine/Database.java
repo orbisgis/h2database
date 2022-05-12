@@ -272,6 +272,9 @@ public final class Database implements DataHandler, CastDataProvider {
         }
         this.allowBuiltinAliasOverride = ci.getProperty("BUILTIN_ALIAS_OVERRIDE", false);
         boolean closeAtVmShutdown = dbSettings.dbCloseOnExit;
+        if (autoServerMode && !closeAtVmShutdown) {
+            throw DbException.getUnsupportedException("AUTO_SERVER=TRUE && DB_CLOSE_ON_EXIT=FALSE");
+        }
         int traceLevelFile = ci.getIntProperty(SetTypes.TRACE_LEVEL_FILE, TraceSystem.DEFAULT_TRACE_LEVEL_FILE);
         int traceLevelSystemOut = ci.getIntProperty(SetTypes.TRACE_LEVEL_SYSTEM_OUT,
                 TraceSystem.DEFAULT_TRACE_LEVEL_SYSTEM_OUT);
@@ -1181,9 +1184,6 @@ public final class Database implements DataHandler, CastDataProvider {
                     closeAllSessionsExcept(null);
                 }
             }
-            if (!this.isReadOnly()) {
-                removeOrphanedLobs();
-            }
         }
         try {
             try {
@@ -1192,7 +1192,7 @@ public final class Database implements DataHandler, CastDataProvider {
                         for (Schema schema : schemas.values()) {
                             for (Table table : schema.getAllTablesAndViews(null)) {
                                 if (table.isGlobalTemporary()) {
-                                    table.removeChildrenAndResources(systemSession);
+                                    removeSchemaObject(systemSession, table);
                                 } else {
                                     table.close(systemSession);
                                 }
@@ -1217,22 +1217,16 @@ public final class Database implements DataHandler, CastDataProvider {
                         meta.close(systemSession);
                         systemSession.commit(true);
                     }
-                }
-            } catch (DbException e) {
-                trace.error(e, "close");
-            }
-            tempFileDeleter.deleteAll();
-            try {
-                if (lobSession != null) {
-                    lobSession.close();
-                    lobSession = null;
-                }
-                if (systemSession != null) {
+                    if (lobSession != null) {
+                        lobSession.close();
+                        lobSession = null;
+                    }
                     systemSession.close();
                     systemSession = null;
                 }
+                tempFileDeleter.deleteAll();
                 closeOpenFilesAndUnlock();
-            } catch (DbException e) {
+            } catch (DbException | MVStoreException e) {
                 trace.error(e, "close");
             }
             trace.info("closed");
@@ -1253,23 +1247,12 @@ public final class Database implements DataHandler, CastDataProvider {
         }
     }
 
-    private void removeOrphanedLobs() {
-        // remove all session variables and temporary lobs
-        if (!persistent) {
-            return;
-        }
-        try {
-            lobStorage.removeAllForTable(LobStorageFrontend.TABLE_ID_SESSION_VARIABLE);
-        } catch (DbException e) {
-            trace.error(e, "close");
-        }
-    }
-
     /**
      * Close all open files and unlock the database.
      */
     private synchronized void closeOpenFilesAndUnlock() {
         try {
+            lobStorage.close();
             if (!store.getMvStore().isClosed()) {
                 if (compactMode == CommandInterface.SHUTDOWN_IMMEDIATELY) {
                     store.closeImmediately();

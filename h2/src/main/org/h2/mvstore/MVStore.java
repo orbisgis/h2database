@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.h2.compress.CompressDeflate;
@@ -364,6 +365,11 @@ public class MVStore implements AutoCloseable {
     private long leafCount;
     private long nonLeafCount;
 
+    /**
+     * Callback for maintenance after some unused store versions were dropped
+     */
+    private volatile LongConsumer oldestVersionTracker;
+
 
     /**
      * Create and open the store.
@@ -580,7 +586,7 @@ public class MVStore implements AutoCloseable {
         }
     }
 
-    private void panic(MVStoreException e) {
+    public void panic(MVStoreException e) {
         if (isOpen()) {
             handleException(e);
             panicException = e;
@@ -932,6 +938,7 @@ public class MVStore implements AutoCloseable {
             Chunk tailChunk = discoverChunk(blocksInStore);
             if (tailChunk != null) {
                 blocksInStore = tailChunk.block; // for a possible full scan later on
+                validChunksByLocation.put(blocksInStore, tailChunk);
                 if (newest == null || tailChunk.version > newest.version) {
                     newest = tailChunk;
                 }
@@ -950,8 +957,6 @@ public class MVStore implements AutoCloseable {
                     if (test == null || test.version <= newest.version) {
                         break;
                     }
-                    // if shutdown was really clean then chain should be empty
-                    assumeCleanShutdown = false;
                     newest = test;
                 }
             }
@@ -1123,6 +1128,11 @@ public class MVStore implements AutoCloseable {
             }
         }
         return false;
+    }
+
+    void adoptMetaFrom(MVStore source) {
+        currentVersion = source.currentVersion;
+        lastMapId.set(source.lastMapId.get());
     }
 
     private void setLastChunk(Chunk last) {
@@ -1298,6 +1308,7 @@ public class MVStore implements AutoCloseable {
         // This is a subtle difference between !isClosed() and isOpen().
         while (!isClosed()) {
             stopBackgroundThread(normalShutdown);
+            setOldestVersionTracker(null);
             storeLock.lock();
             try {
                 if (state == STATE_OPEN) {
@@ -1352,18 +1363,6 @@ public class MVStore implements AutoCloseable {
             } finally {
                 storeLock.unlock();
             }
-        }
-    }
-
-    private static void shutdownExecutor(ThreadPoolExecutor executor) {
-        if (executor != null) {
-            executor.shutdown();
-            try {
-                if (executor.awaitTermination(1000, TimeUnit.MILLISECONDS)) {
-                    return;
-                }
-            } catch (InterruptedException ignore) {/**/}
-            executor.shutdownNow();
         }
     }
 
@@ -1543,7 +1542,7 @@ public class MVStore implements AutoCloseable {
                 return;
             } catch (RejectedExecutionException ex) {
                 assert executor.isShutdown();
-                shutdownExecutor(executor);
+                Utils.shutdownExecutor(executor);
             }
         }
         action.run();
@@ -2027,13 +2026,13 @@ public class MVStore implements AutoCloseable {
             // all task submissions to it are done under storeLock,
             // it is guaranteed, that upon this dummy task completion
             // there are no pending / in-progress task here
-            submitOrRun(serializationExecutor, () -> {}, true);
+            Utils.flushExecutor(serializationExecutor);
             serializationLock.lock();
             try {
                 // similarly, all task submissions to bufferSaveExecutor
                 // are done under serializationLock, and upon this dummy task completion
                 // it will be no pending / in-progress task here
-                submitOrRun(bufferSaveExecutor, () -> {}, true);
+                Utils.flushExecutor(bufferSaveExecutor);
                 saveChunkLock.lock();
                 try {
                     if (lastChunk != null && reuseSpace && getFillRate() <= targetFillRate) {
@@ -2725,6 +2724,14 @@ public class MVStore implements AutoCloseable {
     }
 
     /**
+     * Indicates whether store versions are rolling.
+     * @return true if versions are rolling, false otherwise
+     */
+    public boolean isVersioningRequired() {
+        return fileStore != null || versionsToKeep > 0;
+    }
+
+    /**
      * How many versions to retain for in-memory stores. If not set, 5 old
      * versions are retained.
      *
@@ -2766,14 +2773,22 @@ public class MVStore implements AutoCloseable {
         return v;
     }
 
-    private void setOldestVersionToKeep(long oldestVersionToKeep) {
+    private void setOldestVersionToKeep(long version) {
         boolean success;
         do {
-            long current = this.oldestVersionToKeep.get();
+            long current = oldestVersionToKeep.get();
             // Oldest version may only advance, never goes back
-            success = oldestVersionToKeep <= current ||
-                        this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
+            success = version <= current ||
+                        oldestVersionToKeep.compareAndSet(current, version);
         } while (!success);
+
+        if (oldestVersionTracker != null) {
+            oldestVersionTracker.accept(version);
+        }
+    }
+
+    public void setOldestVersionTracker(LongConsumer callback) {
+        oldestVersionTracker = callback;
     }
 
     private long lastChunkVersion() {
@@ -3125,6 +3140,11 @@ public class MVStore implements AutoCloseable {
             if (meta.remove(DataUtils.META_NAME + name) != null) {
                 markMetaChanged();
             }
+            // normally actual map removal is delayed, up until this current version go out os scope,
+            // but for in-memory case, when versions rolling is turned off, do it now
+            if (!isVersioningRequired()) {
+                maps.remove(id);
+            }
         } finally {
             storeLock.unlock();
         }
@@ -3329,8 +3349,7 @@ public class MVStore implements AutoCloseable {
         }
         storeLock.lock();
         try {
-            assert state == STATE_CLOSED;
-            return true;
+            return state == STATE_CLOSED;
         } finally {
             storeLock.unlock();
         }
@@ -3361,9 +3380,9 @@ public class MVStore implements AutoCloseable {
                         }
                     }
                 }
-                shutdownExecutor(serializationExecutor);
+                Utils.shutdownExecutor(serializationExecutor);
                 serializationExecutor = null;
-                shutdownExecutor(bufferSaveExecutor);
+                Utils.shutdownExecutor(bufferSaveExecutor);
                 bufferSaveExecutor = null;
                 break;
             }
@@ -3398,20 +3417,10 @@ public class MVStore implements AutoCloseable {
                             fileStore.toString());
             if (backgroundWriterThread.compareAndSet(null, t)) {
                 t.start();
-                serializationExecutor = createSingleThreadExecutor("H2-serialization");
-                bufferSaveExecutor = createSingleThreadExecutor("H2-save");
+                serializationExecutor = Utils.createSingleThreadExecutor("H2-serialization");
+                bufferSaveExecutor = Utils.createSingleThreadExecutor("H2-save");
             }
         }
-    }
-
-    private static ThreadPoolExecutor createSingleThreadExecutor(String threadName) {
-        return new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-                                        new LinkedBlockingQueue<>(),
-                                        r -> {
-                                            Thread thread = new Thread(r, threadName);
-                                            thread.setDaemon(true);
-                                            return thread;
-                                        });
     }
 
     public boolean isBackgroundThread() {
@@ -3577,19 +3586,28 @@ public class MVStore implements AutoCloseable {
      * @param txCounter to be decremented, obtained from registerVersionUsage()
      */
     public void deregisterVersionUsage(TxCounter txCounter) {
-        if(txCounter != null) {
-            if(txCounter.decrementAndGet() <= 0) {
-                if (storeLock.isHeldByCurrentThread()) {
+        if(decrementVersionUsageCounter(txCounter)) {
+            if (storeLock.isHeldByCurrentThread()) {
+                dropUnusedVersions();
+            } else if (storeLock.tryLock()) {
+                try {
                     dropUnusedVersions();
-                } else if (storeLock.tryLock()) {
-                    try {
-                        dropUnusedVersions();
-                    } finally {
-                        storeLock.unlock();
-                    }
+                } finally {
+                    storeLock.unlock();
                 }
             }
         }
+    }
+
+    /**
+     * De-register (close) completed operation (transaction).
+     * This will decrement usage counter for the corresponding version.
+     *
+     * @param txCounter to be decremented, obtained from registerVersionUsage()
+     * @return true if counter reaches zero, which indicates that version is no longer in use, false otherwise.
+     */
+    public boolean decrementVersionUsageCounter(TxCounter txCounter) {
+        return txCounter != null &&  txCounter.decrementAndGet() <= 0;
     }
 
     private void onVersionChange(long version) {
@@ -3607,7 +3625,8 @@ public class MVStore implements AutoCloseable {
                 && txCounter.get() < 0) {
             versions.poll();
         }
-        setOldestVersionToKeep((txCounter != null ? txCounter : currentTxCounter).version);
+        long oldestVersionToKeep = (txCounter != null ? txCounter : currentTxCounter).version;
+        setOldestVersionToKeep(oldestVersionToKeep);
     }
 
     private int dropUnusedChunks() {
